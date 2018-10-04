@@ -34,6 +34,14 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
 
 @implementation UIProgressView (AFNetworking)
 
+- (NSURLSessionTask *)af_task {
+    return objc_getAssociatedObject(self, @selector(af_task));
+}
+
+- (void)setAf_task:(NSURLSessionTask *)task {
+    objc_setAssociatedObject(self, @selector(af_task), task, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 - (BOOL)af_uploadProgressAnimated {
     return [(NSNumber *)objc_getAssociatedObject(self, @selector(af_uploadProgressAnimated)) boolValue];
 }
@@ -59,6 +67,8 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
         return;
     }
     
+	[self removeObservers];
+    self.af_task = task;
     [task addObserver:self forKeyPath:@"state" options:(NSKeyValueObservingOptions)0 context:AFTaskCountOfBytesSentContext];
     [task addObserver:self forKeyPath:@"countOfBytesSent" options:(NSKeyValueObservingOptions)0 context:AFTaskCountOfBytesSentContext];
 
@@ -72,6 +82,8 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
         return;
     }
     
+	[self removeObservers];
+    self.af_task = task;
     [task addObserver:self forKeyPath:@"state" options:(NSKeyValueObservingOptions)0 context:AFTaskCountOfBytesReceivedContext];
     [task addObserver:self forKeyPath:@"countOfBytesReceived" options:(NSKeyValueObservingOptions)0 context:AFTaskCountOfBytesReceivedContext];
 
@@ -86,10 +98,12 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
                        context:(void *)context
 {
     if (context == AFTaskCountOfBytesSentContext || context == AFTaskCountOfBytesReceivedContext) {
+		__weak __typeof(self)weakSelf = self;
         if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesSent))]) {
             if ([object countOfBytesExpectedToSend] > 0) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self setProgress:[object countOfBytesSent] / ([object countOfBytesExpectedToSend] * 1.0f) animated:self.af_uploadProgressAnimated];
+					__strong __typeof(weakSelf)strongSelf = weakSelf;
+                    [strongSelf setProgress:[object countOfBytesSent] / ([object countOfBytesExpectedToSend] * 1.0f) animated:strongSelf.af_uploadProgressAnimated];
                 });
             }
         }
@@ -97,7 +111,8 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
         if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesReceived))]) {
             if ([object countOfBytesExpectedToReceive] > 0) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self setProgress:[object countOfBytesReceived] / ([object countOfBytesExpectedToReceive] * 1.0f) animated:self.af_downloadProgressAnimated];
+					__strong __typeof(weakSelf)strongSelf = weakSelf;
+                    [strongSelf setProgress:[object countOfBytesReceived] / ([object countOfBytesExpectedToReceive] * 1.0f) animated:strongSelf.af_downloadProgressAnimated];
                 });
             }
         }
@@ -114,11 +129,41 @@ static void * AFTaskCountOfBytesReceivedContext = &AFTaskCountOfBytesReceivedCon
                     if (context == AFTaskCountOfBytesReceivedContext) {
                         [object removeObserver:self forKeyPath:NSStringFromSelector(@selector(countOfBytesReceived))];
                     }
+					self.af_task = nil;
                 }
                 @catch (NSException * __unused exception) {}
             }
         }
     }
+}
+
+- (void)dealloc
+{
+	[self removeObservers];
+}
+
+- (void)removeObservers
+{
+	if (self.af_task) {
+		@try {
+			[self.af_task removeObserver:self forKeyPath:@"state"];
+		}
+		@catch (NSException * __unused exception) {
+//			NSLog(@"%@", exception);
+		}
+		@try {
+			[self.af_task removeObserver:self forKeyPath:@"countOfBytesSent"];
+		}
+		@catch (NSException * __unused exception) {
+//			NSLog(@"%@", exception);
+		}
+		@try {
+			[self.af_task removeObserver:self forKeyPath:@"countOfBytesReceived"];
+		}
+		@catch (NSException * __unused exception) {
+//			NSLog(@"%@", exception);
+		}
+	}
 }
 
 @end
